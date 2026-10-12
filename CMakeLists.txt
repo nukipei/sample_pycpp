@@ -1,11 +1,12 @@
-cmake_minimum_required(VERSION 3.15...3.31)
+cmake_minimum_required(VERSION 3.26...3.31)
 project(${SKBUILD_PROJECT_NAME} VERSION ${SKBUILD_PROJECT_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Python 3.11 REQUIRED COMPONENTS Interpreter Development.Module)
+# Development.SABIModule は nanobind の STABLE_ABI (abi3) に必須（CMake 3.26+）
+find_package(Python 3.11 REQUIRED COMPONENTS Interpreter Development.Module Development.SABIModule)
 
 # nanobind の CMake パッケージの場所を Python から取得する
 execute_process(
@@ -32,7 +33,7 @@ if(NOT WIN32)
 endif()
 
 # Python 拡張モジュール
-nanobind_add_module(_core NB_STATIC src/bindings/module.cpp)
+nanobind_add_module(_core STABLE_ABI NB_STATIC src/bindings/module.cpp)
 target_link_libraries(_core PRIVATE sieve_core)
 target_compile_options(_core PRIVATE ${SAMPLE_WARNINGS})
 

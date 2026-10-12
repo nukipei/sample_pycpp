@@ -24,7 +24,9 @@ build-backend = "scikit_build_core.build"
 [tool.scikit-build]
 minimum-version = "build-system.requires"
 wheel.packages = ["src/sample"]
-cmake.version = ">=3.15"
+# Python 3.12 以降は abi3 wheel を共用（3.11 は通常の cp311 wheel）
+wheel.py-api = "cp312"
+cmake.version = ">=3.26"
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"
 
@@ -44,7 +46,7 @@ dev = ["pytest>=9.1.1"]
 testpaths = ["tests/python"]
 
 [tool.cibuildwheel]
-build = "cp311-* cp312-* cp313-* cp314-*"
+build = "cp311-* cp312-*"
 skip = "*-musllinux_* *-win32 *_i686"
 build-frontend = "build[uv]"
 test-requires = ["pytest"]
