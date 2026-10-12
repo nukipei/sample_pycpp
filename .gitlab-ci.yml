@@ -1,0 +1,95 @@
+# sample CI
+#
+# 社内プロキシ環境の場合は、プロジェクト/グループの CI/CD 変数に以下を設定すること:
+#   HTTP_PROXY / HTTPS_PROXY / NO_PROXY（必要なら小文字版 http_proxy 等も）
+# イメージを社内レジストリのミラーから取得する場合は UV_IMAGE / MANYLINUX_IMAGE を CI/CD 変数で上書きする。
+# PyPI ミラーを使う場合は UV_DEFAULT_INDEX（および PIP_INDEX_URL）を CI/CD 変数で設定する。
+
+stages: [test, build, publish]
+
+variables:
+  UV_IMAGE: "ghcr.io/astral-sh/uv:0.13-python3.12-bookworm"
+  MANYLINUX_IMAGE: "quay.io/pypa/manylinux_2_28_x86_64"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  UV_LINK_MODE: copy
+
+# 全 push / MR で実行（MR パイプラインとブランチパイプラインの重複を避ける）
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+.uv-cache:
+  cache:
+    key:
+      files: [uv.lock]
+    paths: [.uv-cache]
+
+# 社内ランナーのタグが必要な場合は各ジョブに `tags:` を追加する
+# default:
+#   tags: [docker]
+
+test:
+  stage: test
+  image: $UV_IMAGE
+  extends: .uv-cache
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends build-essential cmake
+  script:
+    - uv sync --locked
+    - uv run pytest -v
+  after_script:
+    - uv cache prune --ci || true
+
+build:linux:
+  stage: build
+  image: $MANYLINUX_IMAGE
+  script:
+    - bash scripts/build_manylinux.sh
+  artifacts:
+    paths:
+      - wheelhouse/*.whl
+    expire_in: 1 week
+
+build:sdist:
+  stage: build
+  image: $UV_IMAGE
+  script:
+    - uv build --sdist
+  artifacts:
+    paths:
+      - dist/*.tar.gz
+    expire_in: 1 week
+
+publish:
+  stage: publish
+  image: $UV_IMAGE
+  needs:
+    - job: build:linux
+      artifacts: true
+    - job: build:sdist
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - uv publish
+        --publish-url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
+        --username gitlab-ci-token
+        --password "${CI_JOB_TOKEN}"
+        wheelhouse/*.whl dist/*.tar.gz
+
+# --- 将来 Windows ランナーを用意した場合のジョブ案（現在はローカルビルド方針のため無効） ---
+# build:windows:
+#   stage: build
+#   tags: [windows]          # 社内 Windows ランナーのタグに合わせる
+#   rules:
+#     - if: $CI_COMMIT_TAG
+#   script:
+#     - powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+#   artifacts:
+#     paths:
+#       - wheelhouse/*win_amd64.whl
+#     expire_in: 1 week
