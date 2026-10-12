@@ -33,7 +33,7 @@ if(NOT WIN32)
 endif()
 
 # Python 拡張モジュール
-nanobind_add_module(_core STABLE_ABI NB_STATIC src/bindings/module.cpp)
+nanobind_add_module(_core STABLE_ABI FREE_THREADED NB_STATIC src/bindings/module.cpp)
 target_link_libraries(_core PRIVATE sieve_core)
 target_compile_options(_core PRIVATE ${SAMPLE_WARNINGS})
 

@@ -46,8 +46,16 @@ dev = ["pytest>=9.1.1"]
 testpaths = ["tests/python"]
 
 [tool.cibuildwheel]
-build = "cp311-* cp312-*"
+build = "cp311-* cp312-* cp314t-*"
 skip = "*-musllinux_* *-win32 *_i686"
 build-frontend = "build[uv]"
 test-requires = ["pytest"]
 test-command = "pytest {project}/tests/python"
+
+[tool.cibuildwheel.linux]
+# 社内プロキシ / PyPI ミラーの設定をビルドコンテナへ引き継ぐ（未設定の変数は無視される）
+environment-pass = [
+  "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+  "http_proxy", "https_proxy", "no_proxy",
+  "UV_DEFAULT_INDEX", "PIP_INDEX_URL",
+]

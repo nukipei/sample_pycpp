@@ -1,7 +1,7 @@
 # sample
 
 C++（nanobind）で実装したエラトステネスのふるいを Python から呼び出すサンプルパッケージです。
-ビルドは uv + scikit-build-core、Linux wheel は GitLab CI（manylinux_2_28）、Windows wheel はローカルの Windows 環境でビルドします。
+ビルドは uv + scikit-build-core、Linux wheel は GitLab CI（cibuildwheel + manylinux_2_28）、Windows wheel はローカルの Windows 環境（cibuildwheel）でビルドします。
 
 ## 使用例
 
@@ -35,13 +35,18 @@ C++（`src/**/*.cpp`, `src/**/*.hpp`）や `CMakeLists.txt` を変更すると�
 
 ### Linux wheel（manylinux）をローカルでビルド
 
-CI と同じ処理を Docker で実行できます。
+CI と同じ処理を cibuildwheel で実行できます（Docker が必要）。
 
 ```bash
-docker run --rm -v "$PWD":/io -w /io quay.io/pypa/manylinux_2_28_x86_64 bash scripts/build_manylinux.sh
+uvx cibuildwheel --platform linux --output-dir wheelhouse
 ```
 
-`wheelhouse/` に `sample-<ver>-cp3XX-cp3XX-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl` が Python バージョン数分生成され、それぞれテストされます。
+対象バージョンやテストは `pyproject.toml` の `[tool.cibuildwheel]` で管理しています。
+`wheelhouse/` に次の wheel が生成され、それぞれ manylinux コンテナ内でテストされます。
+
+- `sample-<ver>-cp311-cp311-manylinux_*_x86_64.whl`
+- `sample-<ver>-cp312-abi3-manylinux_*_x86_64.whl`（Stable ABI。Python 3.12 以降で共用）
+- `sample-<ver>-cp314-cp314t-manylinux_*_x86_64.whl`（free-threaded）
 
 ## リリース手順
 
@@ -99,5 +104,5 @@ src/cpp/          Python 非依存の C++ コア（sieve.hpp / sieve.cpp）
 src/bindings/     nanobind バインディング（拡張モジュール _core）
 src/sample/       Python パッケージ（__init__.py, _core.pyi, py.typed）
 tests/python/     pytest
-scripts/          build_manylinux.sh / build_windows.ps1 / publish.ps1
+scripts/          build_windows.ps1 / publish.ps1
 ```

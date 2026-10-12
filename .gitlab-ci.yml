@@ -2,7 +2,7 @@
 #
 # 社内プロキシ環境の場合は、プロジェクト/グループの CI/CD 変数に以下を設定すること:
 #   HTTP_PROXY / HTTPS_PROXY / NO_PROXY（必要なら小文字版 http_proxy 等も）
-# イメージを社内レジストリのミラーから取得する場合は UV_IMAGE / MANYLINUX_IMAGE を CI/CD 変数で上書きする。
+# イメージを社内レジストリのミラーから取得する場合は UV_IMAGE / MANYLINUX_IMAGE / DIND_IMAGE を CI/CD 変数で上書きする。
 # PyPI ミラーを使う場合は UV_DEFAULT_INDEX（および PIP_INDEX_URL）を CI/CD 変数で設定する。
 
 stages: [test, build, publish]
@@ -10,6 +10,7 @@ stages: [test, build, publish]
 variables:
   UV_IMAGE: "ghcr.io/astral-sh/uv:0.13-python3.12-bookworm"
   MANYLINUX_IMAGE: "quay.io/pypa/manylinux_2_28_x86_64"
+  DIND_IMAGE: "docker:27-dind"
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
   UV_LINK_MODE: copy
 
@@ -44,11 +45,23 @@ test:
   after_script:
     - uv cache prune --ci || true
 
+# Linux wheel は cibuildwheel（Docker-in-Docker）で manylinux コンテナ内ビルド・auditwheel 修復・テストまで行う。
+# 対象バージョンやテストは pyproject.toml の [tool.cibuildwheel] で管理する。
+# DinD には privileged なランナーが必要。
 build:linux:
   stage: build
-  image: $MANYLINUX_IMAGE
+  image: $UV_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    CIBW_MANYLINUX_X86_64_IMAGE: $MANYLINUX_IMAGE
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends docker.io
   script:
-    - bash scripts/build_manylinux.sh
+    - uvx cibuildwheel --platform linux --output-dir wheelhouse
   artifacts:
     paths:
       - wheelhouse/*.whl

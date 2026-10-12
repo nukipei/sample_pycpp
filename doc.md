@@ -24,7 +24,7 @@ C++ で実装した関数を Python から呼べるパッケージを作り、�
 | C++ ビルド | CMake（3.15 以上）、C++17 |
 | バインディング | nanobind |
 | テスト | pytest（Python）、C++ 単体テストは任意（GoogleTest） |
-| Linux wheel | manylinux_2_28 イメージ内で `uv build` + `auditwheel repair` |
+| Linux wheel | GitLab CI（Docker-in-Docker）で `cibuildwheel`（manylinux_2_28 + `auditwheel repair`） |
 | Windows wheel | ローカル Windows で `cibuildwheel` |
 | 対象 Python | 3.11〜3.14（CPython、x86_64 / win_amd64 のみ） |
 
@@ -70,8 +70,7 @@ cppsieve/
 ├── README.md
 ├── scripts/
 │   ├── build_windows.ps1      # Windows wheel のローカルビルド
-│   ├── publish.ps1            # Windows wheel のアップロード
-│   └── build_manylinux.sh     # CI 用 Linux wheel ビルド
+│   └── publish.ps1            # Windows wheel のアップロード
 ├── src/
 │   ├── cpp/
 │   │   ├── include/cppsieve/sieve.hpp
@@ -179,19 +178,13 @@ uv build            # sdist と Linux wheel（※この wheel は manylinux で�
 
 **完了条件**: 全テスト成功、`dist/` に sdist と wheel が生成される。
 
-### Step 8: Linux wheel ビルドスクリプト（scripts/build_manylinux.sh）
+### Step 8: Linux wheel のビルド（cibuildwheel）
 
-`quay.io/pypa/manylinux_2_28_x86_64` コンテナ内で実行される前提。docker-in-docker を使わない方式とする（社内ランナーで privileged が許可されていない可能性があるため）。
+専用スクリプトは持たず、`uvx cibuildwheel --platform linux --output-dir wheelhouse` を CI から直接実行する。Docker-in-Docker（privileged ランナー）を前提とする。
 
-処理内容:
-
-1. `pip install uv`（またはコンテナ内 Python で uv を導入）
-2. 対象バージョンごとに `/opt/python/cp3XX-cp3XX/bin/python` を使って `uv build --wheel --python <そのpython> -o dist/`
-3. `auditwheel repair dist/*.whl -w wheelhouse/`
-4. 各バージョンで `wheelhouse/` の wheel を新しい venv にインストールし pytest 実行
-5. `set -euo pipefail` を使い、どこかで失敗したら非ゼロ終了
-
-ローカルでも `docker run --rm -v "$PWD":/io -w /io quay.io/pypa/manylinux_2_28_x86_64 bash scripts/build_manylinux.sh` で同じことができることを README に書く。
+- 対象バージョン・テストは `pyproject.toml` の `[tool.cibuildwheel]` に集約する（Windows と共通）。
+- manylinux イメージ内でのビルド・`auditwheel repair`・クリーン環境でのテストは cibuildwheel が行う。
+- ローカルでも同じコマンドで再現できることを README に書く。
 
 ### Step 9: .gitlab-ci.yml
 
@@ -202,7 +195,7 @@ stages: [test, build, publish]
 | ジョブ | 内容 | 条件 |
 |---|---|---|
 | `test` | `ghcr.io/astral-sh/uv` 系の Python イメージで `uv sync --locked` → `uv run pytest`（build-essential・cmake を導入） | 全 push / MR |
-| `build:linux` | manylinux イメージで `scripts/build_manylinux.sh`、`wheelhouse/*.whl` を artifacts に保存 | 全 push / MR |
+| `build:linux` | DinD サービス + `uvx cibuildwheel --platform linux --output-dir wheelhouse`、`wheelhouse/*.whl` を artifacts に保存 | 全 push / MR |
 | `build:sdist` | `uv build --sdist`、`dist/*.tar.gz` を artifacts に保存 | 全 push / MR |
 | `publish` | `uv publish` で Linux wheel と sdist を Package Registry へ | **タグ push 時のみ** |
 
@@ -255,7 +248,7 @@ Windows 側（WSL ではない）の PowerShell で実行する前提。前提�
 
 - [ ] WSL で `uv sync && uv run pytest` が全件成功
 - [ ] C++ を変更後、`uv run pytest` で再ビルドされ変更が反映される
-- [ ] `scripts/build_manylinux.sh` を manylinux コンテナで実行し、`manylinux_2_28_x86_64` タグの wheel が Python バージョン数分生成され、各テストが成功
+- [ ] `uvx cibuildwheel --platform linux` を実行し、`manylinux_2_28_x86_64` タグの wheel（cp311 / cp312-abi3 / cp314t）が生成され、各テストが成功
 - [ ] `.gitlab-ci.yml` が YAML として妥当（可能なら `gitlab-ci-lint` 相当の確認、少なくとも構文チェック）
 - [ ] wheel のタグが正しい（`py3-none-any` になっていない）こと、1つの wheel に1プラットフォームのバイナリのみ含むことを `unzip -l` で確認
 - [ ] PowerShell スクリプトは WSL 上では実行できないため、構文と手順の見直しのみ行い、未検証である旨を報告に明記
