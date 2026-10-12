@@ -34,7 +34,7 @@ def test_negative_raises_value_error(n: int) -> None:
         sieve(n)
 
 
-@pytest.mark.parametrize("n", [2.5, "10", None, [10]])
+@pytest.mark.parametrize("n", [2.5, "10", None, [10], True, False])
 def test_non_int_raises_type_error(n: object) -> None:
     with pytest.raises(TypeError):
         sieve(n)  # type: ignore[arg-type]
