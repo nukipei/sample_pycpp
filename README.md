@@ -1,6 +1,7 @@
 # sample
 
 C++（nanobind）で実装したエラトステネスのふるいを Python から呼び出すサンプルパッケージです。
+開発は Windows ネイティブ / WSL（Ubuntu）のどちらでも可能です。
 ビルドは uv + scikit-build-core、Linux wheel は GitLab CI（cibuildwheel + manylinux_2_28）、Windows wheel はローカルの Windows 環境（cibuildwheel）でビルドします。
 
 ## 使用例
@@ -13,6 +14,25 @@ sieve(30)  # [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
 
 - `n < 0` → `ValueError`
 - int 以外（`2.5`, `"10"` 等）→ `TypeError`
+
+## 開発手順（Windows ネイティブ）
+
+WSL を使わず、Windows（PowerShell）上でそのまま開発・ビルド・テストできます。
+
+前提ツール:
+
+- uv
+- Visual Studio Build Tools（「C++ によるデスクトップ開発」ワークロード。MSVC が必要）
+- Git
+
+```powershell
+uv sync             # C++ 拡張をビルドして editable インストール
+uv run pytest -v
+uv build            # sdist と wheel
+```
+
+- 日本語ロケールの Windows でも文字化けしないよう、MSVC には `/utf-8` を指定しています（`CMakeLists.txt`）。
+- 配布用の Windows wheel は `.\scripts\build_windows.ps1` でビルドします（[リリース手順](#リリース手順)を参照）。
 
 ## 開発手順（WSL / Ubuntu）
 
@@ -77,25 +97,68 @@ wheel はプラットフォームごとに別ファイル（`manylinux_*_x86_64`
 
 ## 利用者側のインストール
 
+ビルド済み wheel（Linux `manylinux_2_28` x86_64 / Windows `win_amd64`）を特定のディレクトリに配置して配布します。利用者側に C++ コンパイラは不要です。
+以下では wheel の配置先を `<wheel-dir>` と表記します（例: `/srv/wheels`、`\fileserver\share\wheels`、`C:\wheels`）。
+
+| Python | 使われる wheel |
+| --- | --- |
+| 3.11 | `cp311-cp311` |
+| 3.12 / 3.13 / 3.14 | `cp312-abi3`（Stable ABI） |
+| 3.14 free-threaded（3.14t） | `cp314-cp314t` |
+
+`<wheel-dir>` には Linux / Windows 両方の wheel を同居させて構いません。pip / uv が実行環境に合うものを自動で選びます。
+
+`sample` は一般的な名前で公開 PyPI に同名パッケージが存在し得るため、以下の例では `--no-index` で PyPI を参照せず、`<wheel-dir>` だけから取得します（`sample` は依存パッケージを持ちません）。
+
+### pip
+
 ```bash
-uv add sample --index https://<your-gitlab>/api/v4/projects/<project id>/packages/pypi/simple
+pip install sample --no-index --find-links <wheel-dir>
 ```
 
-または `pyproject.toml` に設定:
+バージョンを固定する場合は `sample==0.1.0` とします。
+
+### uv
+
+プロジェクトに追加する場合:
+
+```bash
+uv add sample --no-index --find-links <wheel-dir>
+```
+
+または `pyproject.toml` に設定して `uv add sample`:
 
 ```toml
 [[tool.uv.index]]
-name = "gitlab"
-url = "https://<your-gitlab>/api/v4/projects/<project id>/packages/pypi/simple"
+name = "wheels"
+url = "<wheel-dir>"      # 絶対パス、または file:///... 形式
+format = "flat"
 explicit = true
 
 [tool.uv.sources]
-sample = { index = "gitlab" }
+sample = { index = "wheels" }
 ```
 
-`sample` は一般的な名前で公開 PyPI に同名パッケージが存在し得るため、必ず `[tool.uv.sources]` で GitLab の index に固定してください（`explicit = true` により他パッケージは通常の PyPI から取得されます）。
+`explicit = true` と `[tool.uv.sources]` により、`sample` だけをこのディレクトリから取得し、他のパッケージは通常の PyPI から取得されます。
 
-プライベートプロジェクトの場合は `UV_INDEX_GITLAB_USERNAME` / `UV_INDEX_GITLAB_PASSWORD` 環境変数でトークンを渡してください。
+プロジェクトを作らず現在の環境に入れる場合（pip 互換）:
+
+```bash
+uv pip install sample --no-index --find-links <wheel-dir>
+```
+
+### wheel ファイルを直接指定
+
+```bash
+pip install <wheel-dir>/sample-0.1.0-cp312-abi3-win_amd64.whl
+uv pip install <wheel-dir>/sample-0.1.0-cp312-abi3-win_amd64.whl
+```
+
+### 動作確認
+
+```bash
+python -c "from sample import sieve; print(sieve(30))"
+```
 
 ## 構成
 

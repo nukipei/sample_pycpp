@@ -6,7 +6,7 @@
 namespace sample {
 
 std::vector<std::int64_t> sieve(std::int64_t n) {
-    if (n < 0) {
+    if (n <= -1) {
         throw std::invalid_argument("n must be non-negative");
     }
     std::vector<std::int64_t> primes;
