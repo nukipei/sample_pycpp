@@ -1,3 +1,13 @@
+# ファイルごとの改行コードなどの扱いを指定する。
+# Windows と Linux で改行コードが混ざって差分が汚れるのを防ぐための設定。
+
+# 基本は LF に統一する。
+#   text=auto : テキストファイルかどうかは Git が自動で判定する
+#   eol=lf    : 作業ツリーに取り出すときも LF にする
 * text=auto eol=lf
+
+# PowerShell スクリプトだけは CRLF にする（Windows PowerShell 5.1 では文字化けなどを避けやすい）
 *.ps1 text eol=crlf
+
+# wheel はバイナリなので、改行変換や差分表示の対象外にする
 *.whl binary

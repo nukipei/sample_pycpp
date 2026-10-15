@@ -1,9 +1,25 @@
+# Git の管理対象にしたくないファイルを列挙する。
+# ビルドで自動生成されるものや、環境ごとに変わるものが中心。
+
+# ビルドの途中でできる一時ファイル
 build/
+# 配布用に作ったパッケージ（sdist など）の出力先
 dist/
+# cibuildwheel が wheel を出力する場所
 wheelhouse/
+
+# uv が作る仮想環境
 .venv/
+
+# Python が自動で作るキャッシュ
 __pycache__/
+
+# ビルドで生成された拡張モジュール（Linux は .so、Windows は .pyd）
 *.so
 *.pyd
+
+# パッケージのメタ情報（ビルド時に生成される）
 *.egg-info/
+
+# pytest のキャッシュ
 .pytest_cache/

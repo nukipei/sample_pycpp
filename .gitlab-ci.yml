@@ -1,31 +1,47 @@
 # sample CI
 #
+# GitLab CI/CD のパイプライン定義。push やマージリクエストのたびに、
+# テスト → ビルド → 公開 の順で自動実行される。
+#
 # 社内プロキシ環境の場合は、プロジェクト/グループの CI/CD 変数に以下を設定すること:
 #   HTTP_PROXY / HTTPS_PROXY / NO_PROXY（必要なら小文字版 http_proxy 等も）
 # イメージを社内レジストリのミラーから取得する場合は UV_IMAGE / MANYLINUX_IMAGE / DIND_IMAGE を CI/CD 変数で上書きする。
 # PyPI ミラーを使う場合は UV_DEFAULT_INDEX（および PIP_INDEX_URL）を CI/CD 変数で設定する。
 
+# ステージ（段階）の実行順。前のステージが全部成功してから次に進む
 stages: [test, build, publish]
 
 variables:
+  # 各ジョブの実行環境になる Docker イメージ（uv と Python 3.12 入り）
   UV_IMAGE: "ghcr.io/astral-sh/uv:0.13-python3.12-bookworm"
+  # Linux 用 wheel をビルドするための manylinux イメージ。
+  # manylinux でビルドすると、いろいろな Linux ディストリビューションで動く wheel になる
   MANYLINUX_IMAGE: "quay.io/pypa/manylinux_2_28_x86_64"
+  # Docker-in-Docker（コンテナの中で Docker を動かす仕組み）用のイメージ
   DIND_IMAGE: "docker:27-dind"
+  # uv のキャッシュ置き場。プロジェクトの下に置かないと CI のキャッシュ機能で保存できない
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  # キャッシュからのファイル配置をコピーにする（リンクだと別ファイルシステム間で警告が出るため）
   UV_LINK_MODE: copy
 
 # 全 push / MR で実行（MR パイプラインとブランチパイプラインの重複を避ける）
 workflow:
   rules:
+    # マージリクエストのパイプラインは実行する
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # MR が開いているブランチへの push は、上の MR パイプラインと二重になるので実行しない
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
+    # それ以外のブランチへの push は実行する
     - if: $CI_COMMIT_BRANCH
+    # タグの push は実行する（publish ジョブはこのときだけ動く）
     - if: $CI_COMMIT_TAG
 
+# 先頭が「.」のジョブは実行されないテンプレート。extends で各ジョブから取り込める。
 .uv-cache:
   cache:
     key:
+      # uv.lock が変わったときだけキャッシュを作り直す
       files: [uv.lock]
     paths: [.uv-cache]
 
@@ -33,18 +49,23 @@ workflow:
 # default:
 #   tags: [docker]
 
+# ---- テスト ----
 test:
   stage: test
   image: $UV_IMAGE
   extends: .uv-cache
   before_script:
+    # C++ をビルドするためのコンパイラと CMake を入れる
     - apt-get update && apt-get install -y --no-install-recommends build-essential cmake
   script:
+    # uv.lock の内容どおりに依存関係を入れる（--locked はロックファイルとずれていたらエラーにする）
     - uv sync --locked
     - uv run pytest -v
   after_script:
+    # CI 向けにキャッシュを整理する。失敗しても全体は止めない
     - uv cache prune --ci || true
 
+# ---- ビルド ----
 # Linux wheel は cibuildwheel（Docker-in-Docker）で manylinux コンテナ内ビルド・auditwheel 修復・テストまで行う。
 # 対象バージョンやテストは pyproject.toml の [tool.cibuildwheel] で管理する。
 # DinD には privileged なランナーが必要。
@@ -52,21 +73,28 @@ build:linux:
   stage: build
   image: $UV_IMAGE
   services:
+    # alias を docker にしておくと、tcp://docker:2375 で接続できる
     - name: $DIND_IMAGE
       alias: docker
   variables:
+    # ジョブ側の docker コマンドが接続する先
     DOCKER_HOST: tcp://docker:2375
+    # TLS を使わない設定（CI 内部の通信なので省略している）
     DOCKER_TLS_CERTDIR: ""
+    # cibuildwheel が使う manylinux イメージの指定
     CIBW_MANYLINUX_X86_64_IMAGE: $MANYLINUX_IMAGE
   before_script:
+    # cibuildwheel が内部で docker コマンドを呼ぶので、クライアントを入れる
     - apt-get update && apt-get install -y --no-install-recommends docker.io
   script:
     - uvx cibuildwheel --platform linux --output-dir wheelhouse
   artifacts:
+    # 次の publish ジョブに引き渡し、画面からもダウンロードできるようにする
     paths:
       - wheelhouse/*.whl
     expire_in: 1 week
 
+# ソース配布用（sdist）の tar.gz を作る。wheel が使えない環境ではこちらからビルドされる
 build:sdist:
   stage: build
   image: $UV_IMAGE
@@ -77,10 +105,13 @@ build:sdist:
       - dist/*.tar.gz
     expire_in: 1 week
 
+# ---- 公開 ----
+# タグを push したときだけ、GitLab の Package Registry（PyPI 形式）へアップロードする
 publish:
   stage: publish
   image: $UV_IMAGE
   needs:
+    # 上の 2 つのビルド結果（wheel と sdist）を受け取る
     - job: build:linux
       artifacts: true
     - job: build:sdist
@@ -88,6 +119,7 @@ publish:
   rules:
     - if: $CI_COMMIT_TAG
   script:
+    # 認証には、CI が自動で発行するジョブ用トークンを使う
     - uv publish
         --publish-url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
         --username gitlab-ci-token

@@ -1,10 +1,18 @@
+# Python プロジェクトの設定ファイル。
+# パッケージの情報、ビルドの方法、開発用ツールの設定をまとめて書いておく場所です。
+
+# ---- パッケージの基本情報 ----
 [project]
+# pip install や import で使う名前
 name = "sample"
 version = "0.1.0"
 description = "Sieve of Eratosthenes implemented in C++ (sample project)"
+# PyPI などに表示される説明文として README を使う
 readme = "README.md"
+# 対応する Python の下限
 requires-python = ">=3.11"
 license = "MIT"
+# PyPI の検索や絞り込みに使われる分類。動作そのものには影響しない
 classifiers = [
   "Programming Language :: C++",
   "Programming Language :: Python :: 3",
@@ -15,23 +23,37 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
   "Operating System :: Microsoft :: Windows",
 ]
+# 実行時に必要な外部パッケージ。このサンプルは標準ライブラリだけで動くので空
 dependencies = []
 
+# ---- ビルドシステム ----
 [build-system]
+# ビルドするときだけ必要になるパッケージ
+#   scikit-build-core : Python から CMake を呼び出してビルドしてくれる
+#   nanobind          : C++ と Python をつなぐライブラリ
 requires = ["scikit-build-core>=1.1.1", "nanobind>=3.1.0"]
+# ビルドの実行役として scikit-build-core を使う
 build-backend = "scikit_build_core.build"
 
+# ---- scikit-build-core の設定 ----
 [tool.scikit-build]
+# 必要な最低バージョンは build-system.requires の指定に合わせる（バージョンを二重管理しない）
 minimum-version = "build-system.requires"
+# wheel に含める Python パッケージの場所
 wheel.packages = ["src/sample"]
-# Python 3.12 以降は abi3 wheel を共用（3.11 は通常の cp311 wheel）
+# Python 3.12 以降は abi3 wheel を共用する（3.11 は通常の cp311 wheel になる）
 wheel.py-api = "cp312"
+# 使う CMake の最低バージョン（CMakeLists.txt 側の指定と揃えている）
 cmake.version = ">=3.26"
+# 最適化を有効にした Release ビルドにする
 cmake.build-type = "Release"
+# ビルド中の一時ファイルの置き場所。{wheel_tag} には対象環境ごとの名前が入る
 build-dir = "build/{wheel_tag}"
 
+# ---- uv の設定 ----
 [tool.uv]
-# C++ 変更時に uv sync で再ビルドさせる
+# ここに挙げたファイルが変わったら、uv sync でパッケージを自動的にビルドし直す。
+# 指定しないと、C++ を書き換えても再ビルドされないことがある
 cache-keys = [
   { file = "pyproject.toml" },
   { file = "CMakeLists.txt" },
@@ -39,21 +61,35 @@ cache-keys = [
   { file = "src/**/*.hpp" },
 ]
 
+# ---- 開発用の依存パッケージ ----
 [dependency-groups]
+# 開発時だけ使うもの（配布するパッケージには含まれない）。`uv sync` で一緒に入る
 dev = ["pytest>=9.1.1"]
 
+# ---- pytest の設定 ----
 [tool.pytest.ini_options]
+# 引数なしで `pytest` と打ったとき、テストを探しに行く場所
 testpaths = ["tests/python"]
 
+# ---- cibuildwheel の設定 ----
+# cibuildwheel は、配布用の wheel を複数の Python バージョン分まとめてビルドするツール。
+# CI（.gitlab-ci.yml）から呼び出される。
 [tool.cibuildwheel]
+# ビルド対象。cp311=3.11、cp312=3.12（abi3 なので 3.12 以降で共用）、cp314t=3.14 の free-threaded 版
 build = "cp311-* cp312-* cp314t-*"
+# ビルドしない環境。musllinux（Alpine Linux など）、32bit Windows、32bit Linux を除外
 skip = "*-musllinux_* *-win32 *_i686"
+# ビルドに uv を使う（pip より速い）
 build-frontend = "build[uv]"
+# ビルドした wheel を実際にインストールしてテストするときに必要なパッケージ
 test-requires = ["pytest"]
+# テストの実行コマンド。{project} はプロジェクトのルートに置き換わる
 test-command = "pytest {project}/tests/python"
 
 [tool.cibuildwheel.linux]
-# 社内プロキシ / PyPI ミラーの設定をビルドコンテナへ引き継ぐ（未設定の変数は無視される）
+# Linux では、ビルドは Docker コンテナの中で行われる。
+# 社内プロキシや PyPI ミラーの設定をそのコンテナへ引き継ぐための環境変数の一覧。
+# 設定されていない変数は無視されるので、書いておいても問題ない
 environment-pass = [
   "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
   "http_proxy", "https_proxy", "no_proxy",
