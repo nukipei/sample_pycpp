@@ -1,8 +1,9 @@
 """Sieve of Eratosthenes implemented in C++."""
 
 from ._core import sieve as _sieve
+from .tsp import MAX_TSP_NODES, TspModel, TspSolution
 
-__all__ = ["sieve"]
+__all__ = ["MAX_TSP_NODES", "TspModel", "TspSolution", "sieve"]
 
 
 def sieve(n: int) -> list[int]:

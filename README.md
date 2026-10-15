@@ -15,6 +15,32 @@ sieve(30)  # [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
 - `n < 0` → `ValueError`
 - int 以外（`2.5`, `"10"` 等）→ `TypeError`
 
+### 巡回セールスマン問題（TSP）
+
+bit DP による厳密解です。OR-Tools と同様に、モデルを作って設定し `solve()` で求解します。
+
+```python
+from sample import TspModel
+
+model = TspModel(num_nodes=4, depot=0)
+model.set_distance_matrix([
+    [0, 10, 15, 20],
+    [10, 0, 35, 25],
+    [15, 35, 0, 30],
+    [20, 25, 30, 0],
+])
+# model.set_distance(0, 1, 10)            # 個別設定
+# model.set_distance_callback(lambda i, j: ...)  # コールバックでの設定（solve 時に評価）
+
+solution = model.solve()
+solution.route     # [0, 2, 3, 1, 0]（同距離の逆回りが最適になる場合もある）
+solution.distance  # 80
+```
+
+- ノード数の上限は `MAX_TSP_NODES`（16、デポを含む）。超えると `ValueError`
+- 距離は 0 以上 1e12 以下の整数（非対称でも可）
+- 範囲外の値・形状不正 → `ValueError`、int 以外 → `TypeError`
+
 ## 開発手順（Windows ネイティブ）
 
 WSL を使わず、Windows（PowerShell）上でそのまま開発・ビルド・テストできます。
@@ -163,7 +189,7 @@ python -c "from sample import sieve; print(sieve(30))"
 ## 構成
 
 ```text
-src/cpp/          Python 非依存の C++ コア（sieve.hpp / sieve.cpp）
+src/cpp/          Python 非依存の C++ コア（sieve / tsp）
 src/bindings/     nanobind バインディング（拡張モジュール _core）
 src/sample/       Python パッケージ（__init__.py, _core.pyi, py.typed）
 tests/python/     pytest

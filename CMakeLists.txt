@@ -45,9 +45,9 @@ else()
   set(SAMPLE_WARNINGS -Wall -Wextra)
 endif()
 
-# 素数を求める処理本体を「静的ライブラリ（STATIC）」としてビルドする。
+# 素数を求める処理と巡回セールスマン問題(TSP)の処理本体を「静的ライブラリ（STATIC）」としてビルドする。
 # Python に一切依存しない作りにしてあるので、C++ だけのテストや他のプログラムからも再利用できる。
-add_library(sieve_core STATIC src/cpp/sieve.cpp)
+add_library(sieve_core STATIC src/cpp/sieve.cpp src/cpp/tsp.cpp)
 # ヘッダファイルの置き場所。PUBLIC にしてあるので、このライブラリを使う側からも
 # #include <sample/sieve.hpp> のように読み込める。
 target_include_directories(sieve_core PUBLIC src/cpp/include)
