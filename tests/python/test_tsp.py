@@ -30,7 +30,8 @@ def tour_length(matrix: list[list[int]], route: list[int]) -> int:
 def brute_force(matrix: list[list[int]], depot: int) -> int:
     others = [v for v in range(len(matrix)) if v != depot]
     return min(
-        tour_length(matrix, [depot, *perm, depot]) for perm in itertools.permutations(others)
+        tour_length(matrix, [depot, *perm, depot])
+        for perm in itertools.permutations(others)
     )
 
 

@@ -65,11 +65,25 @@ cache-keys = [
 [dependency-groups]
 # 開発時だけ使うもの（配布するパッケージには含まれない）。`uv sync` で一緒に入る
 dev = ["pytest>=9.1.1"]
+# 静的解析だけに使うもの。CI の lint ジョブは C++ をビルドせず、このグループだけ入れる
+lint = ["ruff>=0.17.1"]
 
 # ---- pytest の設定 ----
 [tool.pytest.ini_options]
 # 引数なしで `pytest` と打ったとき、テストを探しに行く場所
 testpaths = ["tests/python"]
+
+# ---- ruff（linter / formatter）の設定 ----
+[tool.ruff]
+# Python の下限に合わせる（古い書き方の指摘などに使われる）
+target-version = "py311"
+src = ["src", "tests/python"]
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, I: import の並び順, B: バグになりやすい書き方, UP: 新しい書き方への更新
+select = ["E", "W", "F", "I", "B", "UP"]
+# 行の長さは formatter に任せる（日本語コメントは幅の数え方が違うため E501 は使わない）
+ignore = ["E501"]
 
 # ---- cibuildwheel の設定 ----
 # cibuildwheel は、配布用の wheel を複数の Python バージョン分まとめてビルドするツール。

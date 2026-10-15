@@ -46,7 +46,9 @@ class TspModel:
     """
 
     def __init__(self, num_nodes: int, depot: int = 0) -> None:
-        self._model = _TspModel(_check_int(num_nodes, "num_nodes"), _check_int(depot, "depot"))
+        self._model = _TspModel(
+            _check_int(num_nodes, "num_nodes"), _check_int(depot, "depot")
+        )
         self._callback: Callable[[int, int], int] | None = None
 
     @property

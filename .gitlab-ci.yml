@@ -1,7 +1,7 @@
 # sample CI
 #
 # GitLab CI/CD のパイプライン定義。push やマージリクエストのたびに、
-# テスト → ビルド → 公開 の順で自動実行される。
+# セットアップ → 静的解析 → テスト →（タグのときだけ）ビルド → 公開 の順で自動実行される。
 #
 # 社内プロキシ環境の場合は、プロジェクト/グループの CI/CD 変数に以下を設定すること:
 #   HTTP_PROXY / HTTPS_PROXY / NO_PROXY（必要なら小文字版 http_proxy 等も）
@@ -9,7 +9,9 @@
 # PyPI ミラーを使う場合は UV_DEFAULT_INDEX（および PIP_INDEX_URL）を CI/CD 変数で設定する。
 
 # ステージ（段階）の実行順。前のステージが全部成功してから次に進む
-stages: [test, build, publish]
+#   ブランチへの push / マージリクエスト : setup → lint → test
+#   タグの push                           : setup → lint → test → build → publish
+stages: [setup, lint, test, build, publish]
 
 variables:
   # 各ジョブの実行環境になる Docker イメージ（uv と Python 3.12 入り）
@@ -34,7 +36,7 @@ workflow:
       when: never
     # それ以外のブランチへの push は実行する
     - if: $CI_COMMIT_BRANCH
-    # タグの push は実行する（publish ジョブはこのときだけ動く）
+    # タグの push は実行する（build / publish ジョブはこのときだけ動く）
     - if: $CI_COMMIT_TAG
 
 # 先頭が「.」のジョブは実行されないテンプレート。extends で各ジョブから取り込める。
@@ -44,26 +46,57 @@ workflow:
       # uv.lock が変わったときだけキャッシュを作り直す
       files: [uv.lock]
     paths: [.uv-cache]
+    # 既定は取得＋保存。setup 以外は取得だけにして、並列ジョブ同士の上書きを避ける
+    policy: pull
+
+# C++ をコンパイルする（= プロジェクト本体を uv sync する）ジョブ用の準備
+.cpp-toolchain:
+  extends: .uv-cache
+  before_script:
+    # C++ をビルドするためのコンパイラと CMake を入れる
+    - apt-get update && apt-get install -y --no-install-recommends build-essential cmake
 
 # 社内ランナーのタグが必要な場合は各ジョブに `tags:` を追加する
 # default:
 #   tags: [docker]
 
+# ---- セットアップ ----
+# 依存パッケージの取得と C++ 拡張のビルドを先に 1 回だけ行い、uv のキャッシュに載せる。
+# 後続の lint / test はそのキャッシュを使うので、同じビルドを繰り返さずに済む。
+# キャッシュはあくまで高速化用で、無くても後続ジョブは自力で uv sync して動く。
+setup:
+  stage: setup
+  image: $UV_IMAGE
+  extends: .cpp-toolchain
+  cache:
+    policy: pull-push
+  script:
+    # --locked: uv.lock とずれていたらエラーにする / --all-groups: dev・lint の両方を入れておく
+    - uv sync --locked --all-groups
+  after_script:
+    # CI 向けにキャッシュを整理する。失敗しても全体は止めない
+    - uv cache prune --ci || true
+
+# ---- 静的解析 ----
+# lint グループ（ruff）だけを入れるので、C++ のコンパイルは発生しない。
+# 「テストの前に安く落とす」ためにテストより先に置いている。
+lint:
+  stage: lint
+  image: $UV_IMAGE
+  extends: .uv-cache
+  script:
+    # --only-group lint: ruff だけを入れ、プロジェクト本体（C++）はビルドしない
+    - uv run --locked --only-group lint ruff check src tests
+    - uv run --locked --only-group lint ruff format --check src tests
+
 # ---- テスト ----
 test:
   stage: test
   image: $UV_IMAGE
-  extends: .uv-cache
-  before_script:
-    # C++ をビルドするためのコンパイラと CMake を入れる
-    - apt-get update && apt-get install -y --no-install-recommends build-essential cmake
+  extends: .cpp-toolchain
   script:
-    # uv.lock の内容どおりに依存関係を入れる（--locked はロックファイルとずれていたらエラーにする）
-    - uv sync --locked
-    - uv run pytest -v
-  after_script:
-    # CI 向けにキャッシュを整理する。失敗しても全体は止めない
-    - uv cache prune --ci || true
+    # uv run が実行前に同期（C++ のビルド含む）も行う。--locked は uv.lock とずれていたらエラーにする
+    - uv run --locked pytest -v
 
 # ---- ビルド ----
 # Linux wheel は cibuildwheel（Docker-in-Docker）で manylinux コンテナ内ビルド・auditwheel 修復・テストまで行う。
@@ -76,6 +109,8 @@ build:linux:
     # alias を docker にしておくと、tcp://docker:2375 で接続できる
     - name: $DIND_IMAGE
       alias: docker
+  rules:
+    - if: $CI_COMMIT_TAG
   variables:
     # ジョブ側の docker コマンドが接続する先
     DOCKER_HOST: tcp://docker:2375
@@ -98,6 +133,8 @@ build:linux:
 build:sdist:
   stage: build
   image: $UV_IMAGE
+  rules:
+    - if: $CI_COMMIT_TAG
   script:
     - uv build --sdist
   artifacts:
@@ -110,15 +147,18 @@ build:sdist:
 publish:
   stage: publish
   image: $UV_IMAGE
-  needs:
-    # 上の 2 つのビルド結果（wheel と sdist）を受け取る
-    - job: build:linux
-      artifacts: true
-    - job: build:sdist
-      artifacts: true
+  # 上の 2 つのビルド結果（wheel と sdist）を受け取る（needs したジョブの成果物は自動で取得される）
+  needs: [build:linux, build:sdist]
   rules:
     - if: $CI_COMMIT_TAG
   script:
+    # タグ名（v0.1.0 など）と pyproject.toml の version が食い違っていたら、公開せずに止める
+    - |
+      VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+      if [ "${CI_COMMIT_TAG#v}" != "$VERSION" ]; then
+        echo "タグ ${CI_COMMIT_TAG} と pyproject.toml の version ${VERSION} が一致しません" >&2
+        exit 1
+      fi
     # 認証には、CI が自動で発行するジョブ用トークンを使う
     - uv publish
         --publish-url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
